@@ -1,0 +1,58 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!78 &1
+TagManager:
+  serializedVersion: 2
+  tags: []
+  layers:
+  - Default
+  - TransparentFX
+  - Ignore Raycast
+  - 
+  - Water
+  - UI
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  m_SortingLayers:
+  - name: Ground
+    uniqueID: 712511487
+    locked: 0
+  - name: Turrets
+    uniqueID: 97740191
+    locked: 0
+  - name: TankTracks
+    uniqueID: 1238600579
+    locked: 0
+  - name: Tanks
+    uniqueID: 1129992871
+    locked: 0
+  - name: Bullets
+    uniqueID: 3089177113
+    locked: 0
+  - name: Default
+    uniqueID: 0
+    locked: 0
