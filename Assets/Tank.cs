@@ -18,18 +18,25 @@ public class Tank : NetworkBehaviour {
     float MovementLeft;
 
     float Speed = 5;
+    float TurretSpeed = 180; // Degrees per second
+    float TurretPowerSpeed = 10;
 
     public GameObject CurrentBulletPrefab;
+    public Transform TurretPivot;
 
     public Transform BulletSpawnPoint;
 
-    float turretAngle = 45f;
+    [SyncVar (hook="OnTurretAngleChange")]
+    float turretAngle = 90f;
+
     float turretPower = 10f;
 
     [SyncVar]
     Vector3 serverPosition;
 
     Vector3 serverPositionSmoothVelocity;
+
+    static public Tank LocalTank { get; protected set; }
 
     void NewTurn()
     {
@@ -50,10 +57,15 @@ public class Tank : NetworkBehaviour {
         {
             // This is MY object.  I can do whatever I want with it and the network
             // will listen.
+
+            LocalTank = this;
+
             AuthorityUpdate();
         }
 
         // Do generic updates for ALL clients/server -- like animating movements and such
+        TurretPivot.localRotation = Quaternion.Euler( 0, 0, turretAngle );
+
 
         // Are we in the correct position?
         if( hasAuthority == false )
@@ -72,9 +84,24 @@ public class Tank : NetworkBehaviour {
 
     void AuthorityUpdate()
     {
+        AuthorityUpdateMovement();
+        AuthorityUpdateShooting();
 
+
+        // TODO: Make the power display cooler and de-couple from this code
+        GameObject pn_go = GameObject.Find("Power Number"); // This is slow!
+        pn_go.GetComponent<UnityEngine.UI.Text>().text = turretPower.ToString("#.00");
+
+    }
+
+    void AuthorityUpdateMovement()
+    {
         // Listen for keyboard commands for movement
         float movement = Input.GetAxis("Horizontal") * Speed * Time.deltaTime;
+        if(Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
+        {
+            movement *= 0.1f;
+        }
 
         // TODO: track movement left
 
@@ -84,6 +111,29 @@ public class Tank : NetworkBehaviour {
         // Do we manually tell the network where we moved?
         CmdUpdatePosition( transform.position );
 
+
+    }
+
+    void AuthorityUpdateShooting()
+    {
+        // ANGLE
+        float turretMovement = Input.GetAxis("TurretHorizontal") * TurretSpeed * Time.deltaTime;
+        if(Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
+        {
+            turretMovement *= 0.1f;
+        }
+
+        turretAngle = Mathf.Clamp( turretAngle + turretMovement, 0, 180 );
+        CmdSetTurretAngle(turretAngle);
+
+        // POWER
+        float powerChange = Input.GetAxis("Vertical") * TurretPowerSpeed * Time.deltaTime;
+        if(Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
+        {
+            powerChange *= 0.1f;
+        }
+
+        turretPower = Mathf.Clamp( turretPower + powerChange, 0, 20 );
 
         if(Input.GetKeyUp(KeyCode.Space))
         {
@@ -96,8 +146,12 @@ public class Tank : NetworkBehaviour {
             CmdFireBullet( BulletSpawnPoint.position, velocity );
         }
 
-        // 
+    }
 
+    [Command]
+    void CmdSetTurretAngle( float angle )
+    {
+        turretAngle = angle;
     }
 
     [Command]
@@ -112,6 +166,7 @@ public class Tank : NetworkBehaviour {
             bulletPosition, 
             Quaternion.Euler(0, 0, angle)
         );
+        go.GetComponent<Bullet>().SourceTank = this;
 
         Rigidbody2D rb = go.GetComponent<Rigidbody2D>();
         rb.velocity = velocity;
@@ -142,5 +197,21 @@ public class Tank : NetworkBehaviour {
         transform.position = newPosition;
 
     }
+
+
+    //  SYNCVAR HOOKS
+
+    void OnTurretAngleChange( float newAngle )
+    {
+        if( hasAuthority )
+        {
+            // This is my tank, and my turret -- I can ignore the sync from the server
+            return;
+        }
+
+        turretAngle = newAngle;
+    }
+
+
 
 }
