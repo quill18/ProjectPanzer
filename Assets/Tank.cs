@@ -10,8 +10,10 @@ public class Tank : NetworkBehaviour {
 
 	// Use this for initialization
 	void Start () {
-		
+        gameManager = GameObject.FindObjectOfType<GameManager>();
 	}
+
+    GameManager gameManager;
 
     // SyncVars?
     float MovementPerTurn = 5;
@@ -37,6 +39,8 @@ public class Tank : NetworkBehaviour {
     Vector3 serverPositionSmoothVelocity;
 
     static public Tank LocalTank { get; protected set; }
+
+    public bool IsLockedIn { get; protected set; }
 
     void NewTurn()
     {
@@ -85,7 +89,7 @@ public class Tank : NetworkBehaviour {
     void AuthorityUpdate()
     {
         AuthorityUpdateMovement();
-        AuthorityUpdateShooting();
+        AuthorityUpdateAiming();
 
 
         // TODO: Make the power display cooler and de-couple from this code
@@ -96,9 +100,14 @@ public class Tank : NetworkBehaviour {
 
     void AuthorityUpdateMovement()
     {
+        if (IsLockedIn == true || gameManager.TankCanMove(this) == false)
+        {
+            return;
+        }
+
         // Listen for keyboard commands for movement
         float movement = Input.GetAxis("Horizontal") * Speed * Time.deltaTime;
-        if(Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
+        if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
         {
             movement *= 0.1f;
         }
@@ -106,16 +115,28 @@ public class Tank : NetworkBehaviour {
         // TODO: track movement left
 
         // We have authority, and we don't want any input lag -- so lets move ourselves.
-        transform.Translate( movement, 0, 0 );
+        transform.Translate(movement, 0, 0);
 
         // Do we manually tell the network where we moved?
-        CmdUpdatePosition( transform.position );
+        CmdUpdatePosition(transform.position);
 
-
+        if (Input.GetKeyUp(KeyCode.Space))
+        {
+            // Lock in our movement
+            IsLockedIn = true;
+            // and let the server know
+            CmdLockIn();
+        }
     }
 
-    void AuthorityUpdateShooting()
+
+    void AuthorityUpdateAiming()
     {
+        if ( IsLockedIn == true || gameManager.TankCanAim(this) == false )
+        {
+            return;
+        }
+
         // ANGLE
         float turretMovement = Input.GetAxis("TurretHorizontal") * TurretSpeed * Time.deltaTime;
         if(Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
@@ -137,15 +158,27 @@ public class Tank : NetworkBehaviour {
 
         if(Input.GetKeyUp(KeyCode.Space))
         {
-            Vector2 velocity = new Vector2( 
-                turretPower * Mathf.Cos( turretAngle * Mathf.Deg2Rad ),
-                turretPower * Mathf.Sin( turretAngle * Mathf.Deg2Rad )
-            );
-            Debug.Log(velocity);
+            // Lock in our shot
+            IsLockedIn = true;
+            // and let the server know
+            CmdLockIn();
 
-            CmdFireBullet( BulletSpawnPoint.position, velocity );
+
+            //Vector2 velocity = new Vector2( 
+            //    turretPower * Mathf.Cos( turretAngle * Mathf.Deg2Rad ),
+            //    turretPower * Mathf.Sin( turretAngle * Mathf.Deg2Rad )
+            //);
+            //Debug.Log(velocity);
+
+            //CmdFireBullet( BulletSpawnPoint.position, velocity );
         }
 
+    }
+
+    [Command]
+    void CmdLockIn()
+    {
+        IsLockedIn = true;
     }
 
     [Command]
@@ -179,9 +212,16 @@ public class Tank : NetworkBehaviour {
     {
         // TODO: Check to make sure this move is totally legal,
         // both in term of landscape and movement remaining
+        // and finally (and most importantly) the TURN PHASE
         // If an illegal move is spotted, do something like:
         //      RpcFixPosition( serverPosition )
         // and return
+
+        if( gameManager.TankCanMove( this ) == false )
+        {
+            // According to the server, this tank should not be allowed
+            // to move right now.  DO SOMETHING
+        }
 
         serverPosition = newPosition;
     }
@@ -196,6 +236,22 @@ public class Tank : NetworkBehaviour {
 
         transform.position = newPosition;
 
+    }
+
+    [ClientRpc]
+    void RpcNewTurn()
+    {
+        // A new turn has just started
+
+    }
+
+
+    [ClientRpc]
+    public void RpcNewPhase()
+    {
+        // A new phase has just started
+
+        IsLockedIn = false;
     }
 
 
