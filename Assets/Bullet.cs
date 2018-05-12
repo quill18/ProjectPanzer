@@ -8,7 +8,12 @@ public class Bullet : NetworkBehaviour {
 	// Use this for initialization
 	void Start () {
         rb = GetComponent<Rigidbody2D>();
-	}
+
+        if (isServer)
+        {
+            GameManager.Instance().RegisterResolutionObject(gameObject);
+        }
+    }
 
     Rigidbody2D rb;
 
@@ -16,6 +21,8 @@ public class Bullet : NetworkBehaviour {
     public float Damage = 10f;
     public bool DamageFallsOff = true;
     public Tank SourceTank;   // the tank that fired the shot
+
+    public float LifeSpan = 5;
 
     public bool RotatesWithVelocity = true;
 
@@ -35,6 +42,13 @@ public class Bullet : NetworkBehaviour {
         {
             // Check for ground collisions, since that's not handled by
             // the physics engine
+
+            // TODO: Are we paused?
+            LifeSpan -= Time.deltaTime;
+            if(LifeSpan <= 0)
+            {
+                Die();
+            }
         }
             
 	}
@@ -104,7 +118,21 @@ public class Bullet : NetworkBehaviour {
 
         // TODO: Remove ground pixels?
 
+        Die();
+    }
+
+    void Die()
+    {
+        // Should Die() be the thing that triggers the damage explosion?
+        // i.e. if we time-out in midair (or during bouncing)
+
+        if (isServer)
+        {
+            GameManager.Instance().UnregisterResolutionObject(gameObject);
+        }
+
         // Remove ourselves from the game
         Destroy(gameObject);
+
     }
 }

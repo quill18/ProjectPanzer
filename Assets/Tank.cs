@@ -28,7 +28,6 @@ public class Tank : NetworkBehaviour {
 
     public Transform BulletSpawnPoint;
 
-    [SyncVar (hook="OnTurretAngleChange")]
     float turretAngle = 90f;
 
     float turretPower = 10f;
@@ -36,7 +35,11 @@ public class Tank : NetworkBehaviour {
     [SyncVar]
     Vector3 serverPosition;
 
+    [SyncVar]
+    float serverTurretAngle;
+
     Vector3 serverPositionSmoothVelocity;
+    float serverTurretAngleVelocity;
 
     static public Tank LocalTank { get; protected set; }
 
@@ -67,27 +70,35 @@ public class Tank : NetworkBehaviour {
             AuthorityUpdate();
         }
 
-        // Do generic updates for ALL clients/server -- like animating movements and such
-        TurretPivot.localRotation = Quaternion.Euler( 0, 0, turretAngle );
-
-
         // Are we in the correct position?
-        if( hasAuthority == false )
+        if (hasAuthority == false)
         {
             // We don't directly own this object, so we had better move to the server's
             // position.
 
-            transform.position = Vector3.SmoothDamp( 
-                transform.position, 
-                serverPosition, 
-                ref serverPositionSmoothVelocity, 
-                0.25f );
+            transform.position = Vector3.SmoothDamp(
+                transform.position,
+                serverPosition,
+                ref serverPositionSmoothVelocity,
+                0.25f);
+
+            turretAngle = Mathf.SmoothDamp(turretAngle, serverTurretAngle, ref serverTurretAngleVelocity, 0.25f);
         }
+
+        // Do generic updates for ALL clients/server -- like animating movements and such
+        TurretPivot.localRotation = Quaternion.Euler( 0, 0, turretAngle );
+
 
 	}
 
     void AuthorityUpdate()
     {
+        if( GameManager.Instance().IsProcessingEvent() )
+        {
+            // Don't accept player input while events are processing
+            return;
+        }
+
         AuthorityUpdateMovement();
         AuthorityUpdateAiming();
 
@@ -138,14 +149,14 @@ public class Tank : NetworkBehaviour {
         }
 
         // ANGLE
-        float turretMovement = Input.GetAxis("TurretHorizontal") * TurretSpeed * Time.deltaTime;
+        float turretMovement = Input.GetAxis("Horizontal") * TurretSpeed * Time.deltaTime;
         if(Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
         {
             turretMovement *= 0.1f;
         }
 
         turretAngle = Mathf.Clamp( turretAngle + turretMovement, 0, 180 );
-        CmdSetTurretAngle(turretAngle);
+        CmdSetTurretAngle(turretAngle); // Sync angle to server
 
         // POWER
         float powerChange = Input.GetAxis("Vertical") * TurretPowerSpeed * Time.deltaTime;
@@ -155,8 +166,10 @@ public class Tank : NetworkBehaviour {
         }
 
         turretPower = Mathf.Clamp( turretPower + powerChange, 0, 20 );
+        CmdSetTurretPower(turretPower); // Sync power to server
 
-        if(Input.GetKeyUp(KeyCode.Space))
+
+        if (Input.GetKeyUp(KeyCode.Space))
         {
             // Lock in our shot
             IsLockedIn = true;
@@ -164,15 +177,21 @@ public class Tank : NetworkBehaviour {
             CmdLockIn();
 
 
-            //Vector2 velocity = new Vector2( 
-            //    turretPower * Mathf.Cos( turretAngle * Mathf.Deg2Rad ),
-            //    turretPower * Mathf.Sin( turretAngle * Mathf.Deg2Rad )
-            //);
-            //Debug.Log(velocity);
-
-            //CmdFireBullet( BulletSpawnPoint.position, velocity );
         }
 
+    }
+
+    public void Fire()
+    {
+        this.transform.position = serverPosition;
+        turretAngle = serverTurretAngle;
+
+        Vector2 velocity = new Vector2( 
+            turretPower * Mathf.Cos( turretAngle * Mathf.Deg2Rad ),
+            turretPower * Mathf.Sin( turretAngle * Mathf.Deg2Rad )
+        );
+
+        CmdFireBullet( BulletSpawnPoint.position, velocity );
     }
 
     [Command]
@@ -182,9 +201,17 @@ public class Tank : NetworkBehaviour {
     }
 
     [Command]
-    void CmdSetTurretAngle( float angle )
+    void CmdSetTurretAngle(float angle)
     {
-        turretAngle = angle;
+        // TODO: check for legality
+        serverTurretAngle = angle;
+    }
+
+    [Command]
+    void CmdSetTurretPower(float power)
+    {
+        // TODO: check for legality
+        turretPower = power;
     }
 
     [Command]
@@ -253,21 +280,6 @@ public class Tank : NetworkBehaviour {
 
         IsLockedIn = false;
     }
-
-
-    //  SYNCVAR HOOKS
-
-    void OnTurretAngleChange( float newAngle )
-    {
-        if( hasAuthority )
-        {
-            // This is my tank, and my turret -- I can ignore the sync from the server
-            return;
-        }
-
-        turretAngle = newAngle;
-    }
-
 
 
 }

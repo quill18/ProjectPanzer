@@ -36,11 +36,26 @@ public class GameManager : NetworkBehaviour {
     [SyncVar, System.NonSerialized]
     bool matchHasStarted = false;
 
-	// Update is called once per frame
-	void Update () {
-		
+    bool haveFiredBullets = false;
+    bool bulletsHaveSpawned = false;
+    List<GameObject> activeResolutionsObjects;
+
+    Queue<GameObject> eventQueue;
+    GameObject currentEvent;
+
+    public GameObject NewTurnAnimationPrefab;
+
+    // Update is called once per frame
+    void Update () {
         if(isServer == false)
         {
+            return;
+        }
+
+        // Process any events that are queued up, pausing game logic while that's happening
+        if( ProcessEvent() )
+        {
+            // We are processing an event, so cut the update short.
             return;
         }
 
@@ -60,15 +75,127 @@ public class GameManager : NetworkBehaviour {
         }
 
 
-        if(
-            (TurnState != TURNSTATE.RESOLVE && (TimeLeft <= 0 || IsPhaseLocked() ) )
-            /* TurnState == TURNSTATE.RESOLVE && ResolvePhaseIsCompleted() */ )
+        if( TurnState == TURNSTATE.RESOLVE )
         {
-            // Advance the turn phase.
-            AdvanceTurnPhase();
+            // We are in the RESOLVE phase, so process it
+
+            if( ProcessResolvePhase() == false )
+            {
+                // Resolve phase is over, so let's start a new turn
+                AdvanceTurnPhase();
+            }
+
+        }
+        else
+        {
+            // We are in MOVE or AIM
+            if (TimeLeft <= 0 || IsPhaseLocked())
+            {
+                AdvanceTurnPhase();
+            }
         }
 
+
 	}
+
+    static public GameManager Instance()
+    {
+        // TODO: Cache Me
+        return GameObject.FindObjectOfType<GameManager>();
+    }
+
+    public void EnqueueEvent( GameObject go )
+    {
+        if(eventQueue == null)
+        {
+            eventQueue = new Queue<GameObject>();
+        }
+
+        go.SetActive(false);    // Not allowed to be active while it's in the queue
+        eventQueue.Enqueue(go);
+    }
+
+    public bool IsProcessingEvent()
+    {
+        if (currentEvent == null)
+        {
+            // Nothing in the queue
+            return false;
+        }
+
+        return true;
+    }
+
+    bool ProcessEvent()
+    {
+        if(currentEvent != null)
+        {
+            // Event is still running, do nothing.
+            return true;
+        }
+
+        if(eventQueue == null || eventQueue.Count == 0)
+        {
+            // Nothing in the queue
+            return false;
+        }
+
+        currentEvent = eventQueue.Dequeue();
+        currentEvent.SetActive(true);
+
+        return true;
+    }
+
+    public void RegisterResolutionObject( GameObject o )
+    {
+        activeResolutionsObjects.Add(o);
+    }
+
+    public void UnregisterResolutionObject( GameObject o )
+    {
+        activeResolutionsObjects.Remove(o);
+    }
+
+    bool ProcessResolvePhase()
+    {
+        Tank[] tanks = GetAllTanks();
+
+        // TODO:  Add a step that has a little animation entering this phase,
+        // which lasts at least a fraction of a second just to make sure that
+        // we have received the final aiming instructions from a lagged client.
+
+        if(haveFiredBullets == false)
+        {
+            activeResolutionsObjects = new List<GameObject>();
+            bulletsHaveSpawned = false;
+
+            foreach (Tank tank in tanks)
+            {
+
+                tank.Fire();
+            }
+
+            haveFiredBullets = true;
+        }
+
+        if(activeResolutionsObjects.Count > 0)
+        {
+            bulletsHaveSpawned = true;
+        }
+
+        Debug.Log(activeResolutionsObjects.Count);
+
+        // Are any bullets/explosions still on screen?
+        if(bulletsHaveSpawned && activeResolutionsObjects.Count == 0 )
+        {
+            Debug.Log("Returning false!");
+            // No more bullets/explosions/etc...  Resolution phase is over!
+            return false;
+        }
+
+        return true; // We still have more to do
+
+    }
 
     public bool TankCanMove(Tank tank)
     {
@@ -95,7 +222,12 @@ public class GameManager : NetworkBehaviour {
         TurnNumber++;
         TurnState = TURNSTATE.MOVE;
         TimeLeft = 10;
+        haveFiredBullets = false;
         Debug.Log("Starting Turn: " + TurnNumber);
+
+        GameObject ntgo = Instantiate(NewTurnAnimationPrefab);
+        Debug.Log(ntgo);
+        EnqueueEvent(ntgo);
     }
 
     void AdvanceTurnPhase()
@@ -116,7 +248,7 @@ public class GameManager : NetworkBehaviour {
                 break;
 
             case TURNSTATE.RESOLVE:
-                Debug.LogError("TODO: Add turn resolution code. (i.e. fire bullets)");
+                StartNewTurn();
                 break;
 
             default:
@@ -128,24 +260,29 @@ public class GameManager : NetworkBehaviour {
 
         // Let's tell all of the tanks that a new phase has started
 
-        Tank[] tanks = GameObject.FindObjectsOfType<Tank>();
-        foreach(Tank tank in tanks)
+        Tank[] tanks = GetAllTanks();
+        foreach (Tank tank in tanks)
         {
             tank.RpcNewPhase();
         }
 
     }
 
+    Tank[] GetAllTanks()
+    {
+        // TODO: Consider having the tank class use a static list to register/unregister
+        // live tanks to optimize this step
+
+        return GameObject.FindObjectsOfType<Tank>();
+    }
+
     bool IsPhaseLocked()
     {
         // Check to see if all tanks have locked in their phase moves.
 
-        // TODO: Consider having the tank class use a static list to register/unregister
-        // live tanks to optimize this step
+        Tank[] tanks = GetAllTanks();
 
-        Tank[] tanks = GameObject.FindObjectsOfType<Tank>();
-
-        if(tanks == null || tanks.Length == 0)
+        if (tanks == null || tanks.Length == 0)
         {
             Debug.Log("No tanks yet?");
             return false;
